@@ -721,7 +721,7 @@ for (const c of WALK4) for (const p of ['d', 'u', 'r']) for (let i = 1; i <= 4; 
 preload('sheep_graze');
 // art for the story packs: animals, hazards, destinations, scenery and the special moments
 for (let i = 1; i <= 4; i++) ['wolf_r', 'donkey_r', 'mist_', 'wave_', 'elephant_r', 'giraffe_r', 'lion_r', 'rabbit_r'].forEach(n => preload(n + i));
-['donkey_tied', 'goal_stable', 'goal_gate', 'goal_tomb', 'goal_fold', 'goal_ship', 'pool', 'tent', 'flowers', 'rowboat', 'pillar', 'star',
+['donkey_tied', 'goal_stable', 'goal_gate', 'goal_tomb', 'goal_fold', 'goal_ship', 'pool', 'tent', 'flowers', 'rowboat', 'rowboat_empty', 'pillar', 'star',
  'sp_zacchaeus', 'sp_angel', 'sp_peter', 'sp_bed', 'sp_mary', 'sp_nephi', 'sp_lad', 'sp_lamb'].forEach(preload);
 ['sheep_d', 'sheep_u', 'sheep_s1', 'sheep_s2'].forEach(preload);
 ['well', 'palm', 'rock', 'bush', 'stall', 'jesus_sit', 'cloud_storm', 'cloud_calm', 'boat_beach', 'net', 'basket', 'sailboat', 'scene_bountiful', 'scene_noah', 'goal_ark', 'sp_shem'].forEach(preload);
@@ -2253,6 +2253,53 @@ function seaBoat(x, y, rock, front) {
   const w = cell * 1.1, h = w * im.naturalHeight / im.naturalWidth;
   ctx.save(); ctx.translate(x, y + cell * 0.5); ctx.rotate(rock); ctx.drawImage(im, -w / 2, -h * 0.75, w, h); ctx.restore();
 }
+// a follower on the Stormy Sea: sitting in their own little boat and pulling on the oars
+// (rowboat_empty is the rowboat art with its loose oars painted out; the oars are drawn here so they can move)
+function drawRower(f, x, y, i, now, o) {
+  const im = art('rowboat_empty');
+  if (!im) { drawPerson(x, y, f.look, o); seaBoat(x, y, Math.sin(now / 700 + i) * 0.06, true); return; }
+  if (f.face && f.face.x) f.rowDir = f.face.x;
+  const dir = f.rowDir || 1;
+  const rock = Math.sin(now / 700 + i) * 0.06;
+  // one stroke every ~0.9s while moving, slow and easy while waiting
+  const ph = now / (o.walking ? 900 : 1700) * TAU + i * 0.9;
+  const sw = Math.sin(ph), inWater = Math.cos(ph) > 0;
+  const w = cell * 1.12, h = w * im.naturalHeight / im.naturalWidth;
+  const rimY = -h * 0.75 + h * 76 / 182; // centre of the near gunwale
+  ctx.save();
+  if (o.alpha != null) ctx.globalAlpha *= o.alpha;
+  ctx.translate(x, y + cell * 0.5 + (o.bob || 0)); ctx.rotate(rock);
+  const oar = (near) => {
+    const py = near ? rimY + h * 0.02 : rimY - h * 0.36, k = near ? 1 : 0.7;
+    const bx = -dir * sw * cell * 0.42 * k, by = near ? cell * (inWater ? 0.32 : 0.22) : -cell * (inWater ? 0.1 : 0.16);
+    const hx = -bx * 0.45, hy = -by * 0.45 - cell * 0.08;
+    const a = Math.atan2(by - hy, bx - hx), len = Math.hypot(bx - hx, by - hy);
+    ctx.save(); ctx.translate(hx, py + hy); ctx.rotate(a); ctx.lineJoin = 'round';
+    ctx.strokeStyle = INK; ctx.lineWidth = Math.max(1.3, cell * 0.035);
+    rr(ctx, 0, -cell * 0.03 * k, len * 0.8, cell * 0.06 * k, cell * 0.03); ctx.fillStyle = near ? '#C9934E' : '#A97A40'; ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(len * 0.86, 0, len * 0.2, cell * 0.075 * k, 0, 0, TAU); ctx.fillStyle = near ? '#D9A55E' : '#B98848'; ctx.fill(); ctx.stroke();
+    ctx.restore();
+    if (inWater && near) { // a little splash where the blade bites
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(bx, py + by + cell * 0.05, cell * 0.12, cell * 0.035, 0, 0, TAU); ctx.stroke();
+    }
+  };
+  oar(false);
+  ctx.drawImage(im, -w / 2, -h * 0.75, w, h);
+  // the rower sits low in the boat, facing the way the boat is going, leaning with each pull
+  ctx.save(); ctx.translate(0, rimY + cell * 0.32); ctx.rotate(dir * sw * 0.07);
+  drawPerson(dir * sw * cell * 0.03, -cell * 0.44, f.look, { ...o, face: { x: dir, y: 0 }, bob: 0, alpha: null, cyc: 1, step: 0, swing: 0, scale: 0.9 });
+  ctx.restore();
+  // the near side of the hull goes back over the rower's legs
+  ctx.save(); ctx.beginPath();
+  ctx.moveTo(-w / 2, -h * 0.75 + h * 44 / 182);
+  ctx.quadraticCurveTo(0, rimY + h * 6 / 182 + h * 0.08, w / 2, -h * 0.75 + h * 44 / 182);
+  ctx.lineTo(w / 2, h); ctx.lineTo(-w / 2, h); ctx.closePath(); ctx.clip();
+  ctx.drawImage(im, -w / 2, -h * 0.75, w, h);
+  ctx.restore();
+  oar(true);
+  ctx.restore();
+}
 function drawPillar(c) {
   const x = cx(c.x), y = cy(c.y), u = cell;
   ctx.save(); ctx.lineJoin = 'round';
@@ -2882,8 +2929,8 @@ function render(now) {
       if (now > t0) alpha = clamp(1 - (now - t0) / 600, 0, 1);
     }
     list.push({ y: fy_, z: 1, d: () => {
-      drawPerson(sx, sy, f.look, { face, bob, happy: true, swing: walking ? Math.sin(phase) * cell * 0.03 : 0, step: walking ? (Math.sin(phase) >= 0 ? 1 : -1) : 0, cyc: walking || circleWalk ? Math.floor(((now / 500 + i * 0.5) % 1) * 4) : null, wave, alpha, grey });
-      if (place().sea) { ctx.save(); ctx.globalAlpha *= alpha; seaBoat(sx, sy, Math.sin(now / 700 + i) * 0.06, true); ctx.restore(); }
+      if (place().sea) drawRower(f, sx, sy, i, now, { face, happy: true, wave, alpha, grey, walking, bob: -lift });
+      else drawPerson(sx, sy, f.look, { face, bob, happy: true, swing: walking ? Math.sin(phase) * cell * 0.03 : 0, step: walking ? (Math.sin(phase) >= 0 ? 1 : -1) : 0, cyc: walking || circleWalk ? Math.floor(((now / 500 + i * 0.5) % 1) * 4) : null, wave, alpha, grey });
       if (place().fronds && G.frondsOn && alpha > 0) {
         // waving a palm branch
         const fx0 = sx + cell * 0.3, fy0 = sy - cell * 0.1, a = -1.1 + Math.sin(now / 260 + i) * 0.35;
